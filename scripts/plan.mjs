@@ -15,8 +15,11 @@ if (!epgDir || !outDir) {
 }
 
 // Order is priority. A country code list limits a site to those countries.
+// `connections` and `delay` (ms) are per site: Tata Play answers 429 to ten
+// requests at once — 1,231 of 1,292 came back empty on the first run — so it
+// gets one at a time.
 const JOBS = [
-  { key: 'tataplay', sites: ['tataplay.com'] },
+  { key: 'tataplay', sites: ['tataplay.com'], connections: 1, delay: 300 },
   { key: 'dishtv', sites: ['dishtv.in'] },
   { key: 'airtel', sites: ['airtelxstream.in'] },
   { key: 'sky', sites: ['sky.com'], countries: ['uk', 'in', 'pk', 'bd'] },
@@ -71,7 +74,7 @@ for (const job of JOBS) {
   if (lines.length === 0) continue
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<channels>\n${lines.join('\n')}\n</channels>\n`
   fs.writeFileSync(path.join(outDir, `${job.key}.channels.xml`), xml)
-  jobs.push(job.key)
+  jobs.push({ key: job.key, connections: job.connections ?? 10, delay: job.delay ?? 0 })
 }
 
 console.error(`total: ${taken.size} channels in ${jobs.length} jobs`)

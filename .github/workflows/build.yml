@@ -62,18 +62,19 @@ jobs:
         with:
           name: channels
           path: channels
-      - name: grab ${{ matrix.job }}
+      - name: grab ${{ matrix.job.key }}
         run: >
           npm run grab ---
-          --channels=channels/${{ matrix.job }}.channels.xml
-          --output=guide-${{ matrix.job }}.xml
+          --channels=channels/${{ matrix.job.key }}.channels.xml
+          --output=guide-${{ matrix.job.key }}.xml
           --days=2
-          --maxConnections=10
+          --maxConnections=${{ matrix.job.connections }}
+          --delay=${{ matrix.job.delay }}
           --timeout=20000
       - uses: actions/upload-artifact@v4
         with:
-          name: guide-${{ matrix.job }}
-          path: guide-${{ matrix.job }}.xml
+          name: guide-${{ matrix.job.key }}
+          path: guide-${{ matrix.job.key }}.xml
           if-no-files-found: warn
 
   publish:
