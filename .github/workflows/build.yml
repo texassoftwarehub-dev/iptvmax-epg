@@ -1,0 +1,102 @@
+name: build
+
+on:
+  schedule:
+    # Twice a day, so the two-day guide never runs short. 18:00 UTC is
+    # 23:30 in India, just before the day it mostly covers.
+    - cron: '0 6 * * *'
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      jobs: ${{ steps.plan.outputs.jobs }}
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: iptv-org/epg
+          path: epg
+          fetch-depth: 1
+      - id: sha
+        run: echo "sha=$(git -C epg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - id: plan
+        run: node scripts/plan.mjs epg channels >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: channels
+          path: channels
+
+  grab:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        job: ${{ fromJson(needs.plan.outputs.jobs) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: iptv-org/epg
+          ref: ${{ needs.plan.outputs.sha }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - uses: actions/download-artifact@v4
+        with:
+          name: channels
+          path: channels
+      - name: grab ${{ matrix.job }}
+        run: >
+          npm run grab ---
+          --channels=channels/${{ matrix.job }}.channels.xml
+          --output=guide-${{ matrix.job }}.xml
+          --days=2
+          --maxConnections=10
+          --timeout=20000
+      - uses: actions/upload-artifact@v4
+        with:
+          name: guide-${{ matrix.job }}
+          path: guide-${{ matrix.job }}.xml
+          if-no-files-found: warn
+
+  publish:
+    needs: [plan, grab]
+    # A site that failed shouldn't take the rest down with it.
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: guide-*
+          path: guides
+          merge-multiple: true
+      - run: node scripts/merge.mjs guides public
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deploy
+        uses: actions/deploy-pages@v4
