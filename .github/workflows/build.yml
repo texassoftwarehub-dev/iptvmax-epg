@@ -95,7 +95,7 @@ jobs:
           pattern: guide-*
           path: guides
           merge-multiple: true
-      - run: node scripts/merge.mjs guides public
+      - run: node scripts/merge.mjs guides public "${{ join(fromJson(needs.plan.outputs.jobs).*.key, ',') }}"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: public

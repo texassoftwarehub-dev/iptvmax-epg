@@ -1,6 +1,10 @@
 // Builds one iptv-org `*.channels.xml` per grab job from iptv-org/epg's own
-// site lists, keeping only channels mapped to an iptv-org id and never the
-// same id twice: the first job in JOBS that lists a channel grabs it.
+// site lists, keeping only channels mapped to an iptv-org id.
+//
+// A channel goes to every job whose site lists it, not just the first:
+// sites fail per channel (Tata Play answered 429 to 609 requests even one at
+// a time), and merge.mjs takes each channel's programmes from the first job,
+// in this order, that actually returned some.
 //
 // usage: node scripts/plan.mjs <iptv-org/epg checkout> <out dir>
 // prints `jobs=[...]` for $GITHUB_OUTPUT
@@ -16,10 +20,10 @@ if (!epgDir || !outDir) {
 
 // Order is priority. A country code list limits a site to those countries.
 // `connections` and `delay` (ms) are per site: Tata Play answers 429 to ten
-// requests at once — 1,231 of 1,292 came back empty on the first run — so it
-// gets one at a time.
+// requests at once — 1,231 of 1,292 came back empty on the first run — and
+// still to a third of them one at a time 300 ms apart, so it gets a second.
 const JOBS = [
-  { key: 'tataplay', sites: ['tataplay.com'], connections: 1, delay: 300 },
+  { key: 'tataplay', sites: ['tataplay.com'], connections: 1, delay: 1000 },
   { key: 'dishtv', sites: ['dishtv.in'] },
   { key: 'airtel', sites: ['airtelxstream.in'] },
   { key: 'sky', sites: ['sky.com'], countries: ['uk', 'in', 'pk', 'bd'] },
@@ -53,10 +57,11 @@ function escapeAttr(value) {
 }
 
 fs.mkdirSync(outDir, { recursive: true })
-const taken = new Set()
+const all = new Set()
 const jobs = []
 
 for (const job of JOBS) {
+  const taken = new Set()
   const lines = []
   for (const site of job.sites) {
     for (const { attrs, name } of readSite(site)) {
@@ -64,6 +69,7 @@ for (const job of JOBS) {
       if (!id || taken.has(id)) continue
       if (job.countries && !job.countries.includes(countryOf(id))) continue
       taken.add(id)
+      all.add(id)
       const attrText = Object.entries(attrs)
         .map(([k, v]) => `${k}="${escapeAttr(v)}"`)
         .join(' ')
@@ -77,5 +83,5 @@ for (const job of JOBS) {
   jobs.push({ key: job.key, connections: job.connections ?? 10, delay: job.delay ?? 0 })
 }
 
-console.error(`total: ${taken.size} channels in ${jobs.length} jobs`)
+console.error(`total: ${all.size} distinct channels in ${jobs.length} jobs`)
 console.log(`jobs=${JSON.stringify(jobs)}`)

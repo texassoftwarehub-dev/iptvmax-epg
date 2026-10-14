@@ -2,13 +2,17 @@
 // `index.json`, which lists every channel with all its names so the app can
 // match a provider's channel names without downloading a guide first.
 //
-// usage: node scripts/merge.mjs <dir of guide-*.xml> <out dir>
+// A channel can come from several jobs; its programmes are taken from the
+// first job in priority order that has any, never mixed.
+//
+// usage: node scripts/merge.mjs <dir of guide-*.xml> <out dir> [job,job,…]
 
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
 
-const [inDir, outDir] = process.argv.slice(2)
+const [inDir, outDir, priorityArg] = process.argv.slice(2)
+const priority = (priorityArg ?? '').split(',').filter(Boolean)
 if (!inDir || !outDir) {
   console.error('usage: merge.mjs <in dir> <out dir>')
   process.exit(1)
@@ -55,25 +59,42 @@ try {
 const channels = new Map() // id -> { names:Set, xml }
 const programmes = new Map() // id -> [xml]
 
-const files = fs.existsSync(inDir) ? fs.readdirSync(inDir).filter(f => f.endsWith('.xml')) : []
+const rank = file => {
+  const index = priority.indexOf(file.replace(/^guide-/, '').replace(/\.xml$/, ''))
+  return index === -1 ? priority.length : index
+}
+const files = (fs.existsSync(inDir) ? fs.readdirSync(inDir).filter(f => f.endsWith('.xml')) : [])
+  .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+
 for (const file of files) {
   const text = fs.readFileSync(path.join(inDir, file), 'utf8')
-  let kept = 0
   for (const match of text.matchAll(CHANNEL)) {
     const id = match[1]
-    if (channels.has(id)) continue
-    const names = new Set([...match[2].matchAll(DISPLAY_NAME)].map(m => decode(m[1])).filter(Boolean))
-    for (const name of api.get(id.split('@')[0].toLowerCase()) ?? []) if (name) names.add(name)
-    channels.set(id, { names, body: match[2] })
+    const names = [...match[2].matchAll(DISPLAY_NAME)].map(m => decode(m[1])).filter(Boolean)
+    if (!channels.has(id)) {
+      const all = new Set(names)
+      for (const name of api.get(id.split('@')[0].toLowerCase()) ?? []) if (name) all.add(name)
+      channels.set(id, { names: all, body: match[2] })
+    } else {
+      for (const name of names) channels.get(id).names.add(name)
+    }
   }
+  const here = new Map()
   for (const match of text.matchAll(PROGRAMME)) {
     const id = match[0].match(PROGRAMME_CHANNEL)?.[1]
     if (!id || !channels.has(id)) continue
-    if (!programmes.has(id)) programmes.set(id, [])
-    programmes.get(id).push(match[0])
-    kept++
+    if (!here.has(id)) here.set(id, [])
+    here.get(id).push(match[0])
   }
-  console.error(`${file}: ${kept} programmes`)
+  let taken = 0
+  let filled = 0
+  for (const [id, list] of here) {
+    if (programmes.has(id)) continue
+    programmes.set(id, list)
+    taken += list.length
+    filled++
+  }
+  console.error(`${file}: ${here.size} channels with programmes, ${filled} new (${taken} programmes)`)
 }
 
 const byCountry = new Map()
