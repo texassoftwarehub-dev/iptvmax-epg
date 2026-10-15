@@ -1,0 +1,35 @@
+name: keepalive
+
+# GitHub turns off scheduled workflows in a public repository after 60 days
+# without a commit, and `build` only deploys to Pages — it never commits. Left
+# alone, the guide would stop rebuilding two months after the last change and
+# every user's guide would run dry two days later. This pushes an empty commit
+# once the repository has been quiet for 50 days.
+
+on:
+  schedule:
+    - cron: '0 3 1,15 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: commit if quiet for 50 days
+        run: |
+          last=$(git log -1 --format=%ct)
+          now=$(date +%s)
+          days=$(( (now - last) / 86400 ))
+          echo "last commit ${days} days ago"
+          if [ "$days" -ge 50 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "Keep the scheduled guide build enabled"
+            git push
+          fi
