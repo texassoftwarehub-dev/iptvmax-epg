@@ -26,7 +26,10 @@ const JOBS = [
   { key: 'tataplay', sites: ['tataplay.com'], connections: 1, delay: 1000 },
   { key: 'dishtv', sites: ['dishtv.in'] },
   { key: 'airtel', sites: ['airtelxstream.in'] },
-  { key: 'sky', sites: ['sky.com'], countries: ['uk', 'in', 'pk', 'bd'] },
+  // Sky lists Germany and Italy too, and maps some of those channels to UK
+  // ids (Cartoonito "@Germany", BBC News "@Europe") — UK rows came out with
+  // German schedules. Only its GB listings.
+  { key: 'sky', sites: ['sky.com'], countries: ['uk', 'in', 'pk', 'bd'], siteIdPrefix: 'GB#' },
   { key: 'tvpassport', sites: ['tvpassport.com'], countries: ['us'] }
 ]
 
@@ -68,6 +71,7 @@ for (const job of JOBS) {
       const id = attrs.xmltv_id
       if (!id || taken.has(id)) continue
       if (job.countries && !job.countries.includes(countryOf(id))) continue
+      if (job.siteIdPrefix && !(attrs.site_id ?? '').startsWith(job.siteIdPrefix)) continue
       taken.add(id)
       all.add(id)
       const attrText = Object.entries(attrs)
